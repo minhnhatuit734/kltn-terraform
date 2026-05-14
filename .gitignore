@@ -1,0 +1,22 @@
+# Terraform local files
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfvars
+*.tfplan
+crash.log
+crash.*.log
+
+# SSH keys / secrets
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+kltn-argocd
+kltn-argocd.pub
+
+# OS / editor files
+.DS_Store
+.vscode/
+.idea/

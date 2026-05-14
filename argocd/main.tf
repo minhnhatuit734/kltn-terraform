@@ -1,6 +1,10 @@
-# ArgoCD Terraform Configuration
+# ArgoCD Terraform Configuration for KLTN
+# Purpose:
+# - Provision AWS infrastructure for a standalone ArgoCD server
+# - Install K3s + ArgoCD automatically through EC2 user_data
+
 terraform {
-  required_version = ">= 1.3.0"
+  required_version = ">= 1.6.0"
 
   required_providers {
     aws = {
@@ -15,6 +19,25 @@ provider "aws" {
 }
 
 # ─────────────────────────────────────────
+# Get latest Ubuntu 22.04 LTS AMI
+# Canonical owner ID: 099720109477
+# ─────────────────────────────────────────
+data "aws_ami" "ubuntu_2204" {
+  most_recent = true
+  owners      = ["099720109477"]
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# ─────────────────────────────────────────
 # VPC
 # ─────────────────────────────────────────
 resource "aws_vpc" "argocd_vpc" {
@@ -25,21 +48,23 @@ resource "aws_vpc" "argocd_vpc" {
   tags = {
     Name    = "${var.project_name}-vpc"
     Project = var.project_name
+    Managed = "terraform"
   }
 }
 
 # ─────────────────────────────────────────
-# Subnet (public)
+# Public Subnet
 # ─────────────────────────────────────────
 resource "aws_subnet" "argocd_subnet" {
   vpc_id                  = aws_vpc.argocd_vpc.id
   cidr_block              = var.subnet_cidr
-  availability_zone       = "${var.aws_region}a"
+  availability_zone       = var.availability_zone
   map_public_ip_on_launch = true
 
   tags = {
-    Name    = "${var.project_name}-subnet"
+    Name    = "${var.project_name}-public-subnet"
     Project = var.project_name
+    Managed = "terraform"
   }
 }
 
@@ -52,6 +77,7 @@ resource "aws_internet_gateway" "argocd_igw" {
   tags = {
     Name    = "${var.project_name}-igw"
     Project = var.project_name
+    Managed = "terraform"
   }
 }
 
@@ -67,8 +93,9 @@ resource "aws_route_table" "argocd_rt" {
   }
 
   tags = {
-    Name    = "${var.project_name}-rt"
+    Name    = "${var.project_name}-public-rt"
     Project = var.project_name
+    Managed = "terraform"
   }
 }
 
@@ -82,65 +109,75 @@ resource "aws_route_table_association" "argocd_rta" {
 # ─────────────────────────────────────────
 resource "aws_security_group" "argocd_sg" {
   name        = "${var.project_name}-sg"
-  description = "Security group for ArgoCD server"
+  description = "Security group for K3s and ArgoCD server"
   vpc_id      = aws_vpc.argocd_vpc.id
 
   # SSH
   ingress {
-    description = "SSH"
+    description = "SSH access"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.allowed_cidr]
+    cidr_blocks = [var.allowed_ssh_cidr]
   }
 
-  # ArgoCD UI (HTTPS)
+  # HTTP - reserved for future reverse proxy / ingress
   ingress {
-    description = "ArgoCD UI HTTPS"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # ArgoCD UI (HTTP - redirect)
-  ingress {
-    description = "ArgoCD UI HTTP"
+    description = "HTTP access - reserved for future reverse proxy"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.allowed_web_cidr]
   }
 
-  # ArgoCD gRPC (cho CLI)
+  # HTTPS - reserved for future reverse proxy / ingress
   ingress {
-    description = "ArgoCD gRPC"
-    from_port   = 8080
-    to_port     = 8080
+    description = "HTTPS access - reserved for future reverse proxy"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.allowed_web_cidr]
   }
 
-  # K3s API server (kubectl remote access)
+  # K3s API server
   ingress {
-    description = "K3s API Server"
+    description = "K3s Kubernetes API Server"
     from_port   = 6443
     to_port     = 6443
     protocol    = "tcp"
-    cidr_blocks = [var.allowed_cidr]
+    cidr_blocks = [var.allowed_k8s_api_cidr]
   }
 
-  # NodePort range (cho các service expose qua NodePort)
+  # ArgoCD UI HTTP NodePort
   ingress {
-    description = "NodePort range"
+    description = "ArgoCD UI HTTP NodePort"
+    from_port   = 30080
+    to_port     = 30080
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_web_cidr]
+  }
+
+  # ArgoCD UI HTTPS NodePort
+  ingress {
+    description = "ArgoCD UI HTTPS NodePort"
+    from_port   = 30443
+    to_port     = 30443
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_web_cidr]
+  }
+
+  # NodePort range for future K8s services
+  ingress {
+    description = "Kubernetes NodePort range"
     from_port   = 30000
     to_port     = 32767
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.allowed_nodeport_cidr]
   }
 
-  # Outbound: tất cả
+  # Outbound
   egress {
+    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -150,19 +187,21 @@ resource "aws_security_group" "argocd_sg" {
   tags = {
     Name    = "${var.project_name}-sg"
     Project = var.project_name
+    Managed = "terraform"
   }
 }
 
 # ─────────────────────────────────────────
-# Key Pair
+# EC2 Key Pair
 # ─────────────────────────────────────────
 resource "aws_key_pair" "argocd_key" {
-  key_name   = "${var.project_name}-key"
+  key_name   = var.key_name
   public_key = file(var.public_key_path)
 
   tags = {
-    Name    = "${var.project_name}-key"
+    Name    = var.key_name
     Project = var.project_name
+    Managed = "terraform"
   }
 }
 
@@ -170,29 +209,30 @@ resource "aws_key_pair" "argocd_key" {
 # EC2 Instance
 # ─────────────────────────────────────────
 resource "aws_instance" "argocd_server" {
-  ami                    = var.ami_id
-  instance_type          = var.instance_type
-  subnet_id              = aws_subnet.argocd_subnet.id
-  vpc_security_group_ids = [aws_security_group.argocd_sg.id]
-  key_name               = aws_key_pair.argocd_key.key_name
+  ami                         = data.aws_ami.ubuntu_2204.id
+  instance_type               = var.instance_type
+  subnet_id                   = aws_subnet.argocd_subnet.id
+  vpc_security_group_ids      = [aws_security_group.argocd_sg.id]
+  key_name                    = aws_key_pair.argocd_key.key_name
+  associate_public_ip_address = true
 
   root_block_device {
     volume_size = var.volume_size
     volume_type = "gp3"
   }
 
-  # Tự động cài K3s + ArgoCD khi EC2 khởi động
   user_data = file("${path.module}/scripts/install.sh")
 
   tags = {
     Name    = "${var.project_name}-server"
     Project = var.project_name
     Role    = "argocd"
+    Managed = "terraform"
   }
 }
 
 # ─────────────────────────────────────────
-# Elastic IP (IP tĩnh cho ArgoCD server)
+# Elastic IP
 # ─────────────────────────────────────────
 resource "aws_eip" "argocd_eip" {
   instance = aws_instance.argocd_server.id
@@ -201,5 +241,6 @@ resource "aws_eip" "argocd_eip" {
   tags = {
     Name    = "${var.project_name}-eip"
     Project = var.project_name
+    Managed = "terraform"
   }
 }
