@@ -33,7 +33,7 @@ variable "subnet_cidr" {
 variable "instance_type" {
   description = "EC2 instance type for K3s and ArgoCD"
   type        = string
-  default     = "t2.medium"
+  default     = "t3.micro"
 }
 
 variable "volume_size" {
