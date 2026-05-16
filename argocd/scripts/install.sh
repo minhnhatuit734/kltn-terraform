@@ -46,8 +46,6 @@ echo "[2/6] Preparing kubeconfig for ubuntu user..."
 mkdir -p /home/ubuntu/.kube
 cp /etc/rancher/k3s/k3s.yaml /home/ubuntu/.kube/config
 
-# Metadata endpoint may return the initial public IP.
-# Terraform later associates an Elastic IP, so the kubeconfig may need manual update if remote kubectl is required.
 PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || true)
 
 if [ -n "$PUBLIC_IP" ]; then
@@ -62,48 +60,32 @@ chmod 600 /home/ubuntu/.kube/config
 # ─────────────────────────────────────────
 echo "[3/6] Fixing CoreDNS forwarder..."
 
-kubectl -n kube-system get configmap coredns -o yaml > /tmp/coredns.yaml
+echo "Waiting for CoreDNS ConfigMap to be created..."
+for i in {1..60}; do
+  if kubectl -n kube-system get configmap coredns >/dev/null 2>&1; then
+    echo "CoreDNS ConfigMap found."
+    break
+  fi
 
-if grep -q "forward . /etc/resolv.conf" /tmp/coredns.yaml; then
-  sed -i 's|forward . /etc/resolv.conf|forward . 8.8.8.8 1.1.1.1|g' /tmp/coredns.yaml
-  kubectl apply -f /tmp/coredns.yaml
+  echo "  CoreDNS ConfigMap not found yet. Waiting... ($i/60)"
+  sleep 5
+done
+
+if kubectl -n kube-system get configmap coredns >/dev/null 2>&1; then
+  kubectl -n kube-system get configmap coredns -o yaml > /tmp/coredns.yaml
+
+  if grep -q "forward . /etc/resolv.conf" /tmp/coredns.yaml; then
+    sed -i 's|forward . /etc/resolv.conf|forward . 8.8.8.8 1.1.1.1|g' /tmp/coredns.yaml
+    kubectl apply -f /tmp/coredns.yaml
+  else
+    echo "CoreDNS forwarder is already customized or different from expected."
+  fi
+
+  kubectl -n kube-system rollout restart deployment coredns || true
+  kubectl -n kube-system rollout status deployment coredns --timeout=180s || true
 else
-  echo "CoreDNS forwarder already customized or different from expected. Applying safe CoreDNS config..."
-  cat <<'EOF' | kubectl apply -f -
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: coredns
-  namespace: kube-system
-data:
-  Corefile: |
-    .:53 {
-        errors
-        health
-        ready
-        kubernetes cluster.local in-addr.arpa ip6.arpa {
-          pods insecure
-          fallthrough in-addr.arpa ip6.arpa
-        }
-        hosts /etc/coredns/NodeHosts {
-          ttl 60
-          reload 15s
-          fallthrough
-        }
-        prometheus :9153
-        forward . 8.8.8.8 1.1.1.1
-        cache 30
-        loop
-        reload
-        loadbalance
-    }
-EOF
+  echo "WARNING: CoreDNS ConfigMap was not found after waiting. Skipping CoreDNS patch."
 fi
-
-kubectl -n kube-system rollout restart deployment coredns
-
-echo "Waiting for CoreDNS..."
-kubectl -n kube-system rollout status deployment coredns --timeout=180s || true
 
 # ─────────────────────────────────────────
 # 4. Install ArgoCD
@@ -117,9 +99,9 @@ kubectl apply -n argocd --server-side --force-conflicts \
 
 echo "Waiting for ArgoCD deployments..."
 
-kubectl -n argocd rollout status deployment/argocd-redis --timeout=300s
-kubectl -n argocd rollout status deployment/argocd-repo-server --timeout=300s
-kubectl -n argocd rollout status deployment/argocd-server --timeout=300s
+kubectl -n argocd rollout status deployment/argocd-redis --timeout=300s || true
+kubectl -n argocd rollout status deployment/argocd-repo-server --timeout=300s || true
+kubectl -n argocd rollout status deployment/argocd-server --timeout=300s || true
 kubectl -n argocd rollout status deployment/argocd-applicationset-controller --timeout=300s || true
 kubectl -n argocd rollout status deployment/argocd-dex-server --timeout=300s || true
 
