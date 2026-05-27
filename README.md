@@ -6,7 +6,8 @@ Hạ tầng chính được triển khai trên AWS EKS, sau đó ứng dụng mi
 
 ---
 
-## 1. Tổng quan hệ thống
+## 
+1. Tổng quan hệ thống
 
 Hệ thống KLTN được triển khai theo luồng:
 
