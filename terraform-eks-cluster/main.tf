@@ -1,73 +1,101 @@
 provider "aws" {
-  region = "us-west-1"
+  region = var.aws_region
+}
+
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+locals {
+  name = var.cluster_name
+
+  azs = slice(data.aws_availability_zones.available.names, 0, 2)
+
+  tags = {
+    Project     = "KLTN"
+    Environment = "dev"
+    ManagedBy   = "Terraform"
+    Owner       = "minhnhatuit734"
+  }
 }
 
 module "vpc" {
-  source       = "./modules/vpc"
-  cidr_block   = "10.1.0.0/16"
-  subnet_count = 2
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 6.0"
+
+  name = "${local.name}-vpc"
+  cidr = var.vpc_cidr
+
+  azs = local.azs
+
+  public_subnets = [
+    "10.10.1.0/24",
+    "10.10.2.0/24"
+  ]
+
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  create_igw = true
+
+  enable_nat_gateway = false
+  single_nat_gateway = false
+
+  map_public_ip_on_launch = true
+
+  public_subnet_tags = {
+    "kubernetes.io/role/elb" = "1"
+  }
+
+  tags = local.tags
 }
 
-module "iam" {
-  source = "./modules/iam"
-}
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "~> 21.0"
 
-module "eks-cluster" {
-  source           = "./modules/eks-cluster"
-  cluster_name     = "travelweb-eks-cluster"
-  cluster_role_arn = module.iam.cluster_role_arn
-  subnet_ids       = module.vpc.subnet_ids
-}
+  name               = local.name
+  kubernetes_version = var.kubernetes_version
 
-module "eks-node-group-argocd" {
-  source          = "./modules/eks-node-group"
-  cluster_name    = module.eks-cluster.cluster_name
-  node_group_name = "eks-node-group-argocd"
-  node_role_arn   = module.iam.node_role_arn
-  subnet_ids      = module.vpc.subnet_ids
-  desired_size    = 1
-  max_size        = 1
-  min_size        = 1
-  taint_key       = "app"
-  taint_value     = "argocd"
-  taint_effect    = "NO_SCHEDULE"
-  instance_types  = ["t3.small"]
-}
+  endpoint_public_access = true
 
-module "eks-node-group-prometheus-grafana" {
-  source          = "./modules/eks-node-group"
-  cluster_name    = module.eks-cluster.cluster_name
-  node_group_name = "eks-node-group-prometheus-grafana"
-  node_role_arn   = module.iam.node_role_arn
-  subnet_ids      = module.vpc.subnet_ids
-  desired_size    = 1
-  max_size        = 1
-  min_size        = 1
-  taint_key       = "app"
-  taint_value     = "prometheus-grafana"
-  taint_effect    = "NO_SCHEDULE"
-  instance_types  = ["t3.small"]
-}
+  enable_cluster_creator_admin_permissions = true
 
-module "eks-node-group-frontend-backend" {
-  source          = "./modules/eks-node-group"
-  cluster_name    = module.eks-cluster.cluster_name
-  node_group_name = "eks-node-group-frontend-backend"
-  node_role_arn   = module.iam.node_role_arn
-  subnet_ids      = module.vpc.subnet_ids
-  desired_size    = 2
-  max_size        = 2
-  min_size        = 2
-  taint_key       = "app"
-  taint_value     = "frontend-backend"
-  taint_effect    = "NO_SCHEDULE"
-  instance_types  = ["t3.small"]
-}
+  addons = {
+    coredns = {}
 
-output "cluster_name" {
-  value = module.eks-cluster.cluster_name
-}
+    kube-proxy = {}
 
-output "cluster_endpoint" {
-  value = module.eks-cluster.cluster_endpoint
+    vpc-cni = {
+      before_compute = true
+    }
+
+    eks-pod-identity-agent = {
+      before_compute = true
+    }
+  }
+
+  vpc_id                   = module.vpc.vpc_id
+  subnet_ids               = module.vpc.public_subnets
+  control_plane_subnet_ids = module.vpc.public_subnets
+
+  eks_managed_node_groups = {
+    general = {
+      ami_type       = "AL2023_x86_64_STANDARD"
+      capacity_type  = var.node_capacity_type
+      instance_types = var.node_instance_types
+
+      min_size     = var.node_min_size
+      max_size     = var.node_max_size
+      desired_size = var.node_desired_size
+
+      subnet_ids = module.vpc.public_subnets
+
+      labels = {
+        role = "general"
+      }
+    }
+  }
+
+  tags = local.tags
 }

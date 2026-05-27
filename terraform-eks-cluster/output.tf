@@ -1,11 +1,29 @@
-output "eks_cluster_name" {
-  value = module.eks_cluster.cluster_name
+output "cluster_name" {
+  description = "EKS cluster name"
+  value       = module.eks.cluster_name
 }
 
-output "eks_cluster_endpoint" {
-  value = module.eks_cluster.cluster_endpoint
+output "cluster_endpoint" {
+  description = "EKS cluster endpoint"
+  value       = module.eks.cluster_endpoint
 }
 
-output "eks_cluster_role_arn" {
-  value = module.iam.cluster_role_arn
+output "aws_region" {
+  description = "AWS region"
+  value       = var.aws_region
+}
+
+output "vpc_id" {
+  description = "VPC ID"
+  value       = module.vpc.vpc_id
+}
+
+output "public_subnet_ids" {
+  description = "Public subnet IDs"
+  value       = module.vpc.public_subnets
+}
+
+output "configure_kubectl" {
+  description = "Command to configure kubectl for this EKS cluster"
+  value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"
 }
