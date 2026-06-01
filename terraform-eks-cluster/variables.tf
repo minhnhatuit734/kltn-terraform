@@ -51,3 +51,46 @@ variable "node_max_size" {
   type        = number
   default     = 3
 }
+
+# ──────────────────────────────────────────────
+# ArgoCD
+# ──────────────────────────────────────────────
+variable "argocd_namespace" {
+  description = "Kubernetes namespace for ArgoCD"
+  type        = string
+  default     = "argocd"
+}
+
+variable "argocd_chart_version" {
+  description = "Version of the argo-cd Helm chart"
+  type        = string
+  default     = "7.8.23"
+}
+
+# ──────────────────────────────────────────────
+# Monitoring (kube-prometheus-stack)
+# ──────────────────────────────────────────────
+variable "monitoring_namespace" {
+  description = "Kubernetes namespace for Prometheus + Grafana"
+  type        = string
+  default     = "monitoring"
+}
+
+variable "kube_prometheus_stack_chart_version" {
+  description = "Version of the kube-prometheus-stack Helm chart"
+  type        = string
+  default     = "72.3.0"
+}
+
+variable "grafana_admin_password" {
+  description = "Admin password for Grafana UI"
+  type        = string
+  sensitive   = true
+  default     = "Admin@KLTN2024!"
+}
+
+variable "prometheus_retention" {
+  description = "How long Prometheus retains metrics data"
+  type        = string
+  default     = "15d"
+}
