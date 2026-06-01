@@ -1,5 +1,5 @@
 provider "aws" {
-  region = "us-east-1" # Chỉnh theo region bạn dùng
+  region = "ap-southeast-1" # Chỉnh theo region bạn dùng
 }
 
 module "vpc" {
@@ -13,7 +13,7 @@ module "subnet" {
   name       = "travelweb-subnet"
   vpc_id     = module.vpc.vpc_id
   cidr_block = "10.0.1.0/24"
-  az         = "us-east-1a"
+  az         = "ap-southeast-1a"
 }
 
 module "sg" {
@@ -57,8 +57,8 @@ resource "aws_route_table_association" "public_assoc" {
 module "ec2" {
   source                 = "./modules/EC2"
   name                   = "travelweb-ec2"
-  ami_id                 = "ami-0a7d80731ae1b2435"
-  instance_type          = "t2.large"
+  ami_id                 = "ami-0a56f8447277affd8"
+  instance_type          = "m7i-flex.large"
   subnet_id              = module.subnet.subnet_id
   key_name               = "jenkin_keypair"
   vpc_security_group_ids = [module.sg.sg_id]
