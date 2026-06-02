@@ -1,394 +1,224 @@
 # KLTN Terraform Infrastructure
 
-Repo này chứa mã Terraform dùng để triển khai hạ tầng AWS cho hệ thống khóa luận tốt nghiệp.
+Repo này dùng Terraform để dựng hạ tầng AWS cho hệ thống KLTN, gồm EKS cluster, ingress-nginx, ArgoCD, monitoring bằng kube-prometheus-stack/Grafana, Kubernetes secrets cho ứng dụng, và DNS Cloudflare.
 
-Hạ tầng chính được triển khai trên AWS EKS. Sau đó, ứng dụng microservices được deploy bằng ArgoCD theo mô hình GitOps.
+## Khi pull code về còn thiếu file gì?
 
-## Mục lục
+Các file sau không được commit vì chứa secret hoặc state local. Người pull repo về cần tự tạo lại:
 
-- [Tổng quan hệ thống](#tổng-quan-hệ-thống)
-- [Các repository liên quan](#các-repository-liên-quan)
-- [Hạ tầng được tạo bởi Terraform](#hạ-tầng-được-tạo-bởi-terraform)
-- [Kiến trúc ứng dụng](#kiến-trúc-ứng-dụng)
-- [Luồng request](#luồng-request)
-- [Cách triển khai hạ tầng](#cách-triển-khai-hạ-tầng)
-- [Kết nối kubectl với EKS](#kết-nối-kubectl-với-eks)
-- [Kiểm tra ArgoCD](#kiểm-tra-argocd)
-- [Kiểm tra ứng dụng sau khi deploy](#kiểm-tra-ứng-dụng-sau-khi-deploy)
-- [Kiểm tra API Gateway](#kiểm-tra-api-gateway)
-- [Kiểm tra Frontend](#kiểm-tra-frontend)
-- [ConfigMap và Secret](#configmap-và-secret)
-- [Dừng hệ thống để tránh tốn phí AWS](#dừng-hệ-thống-để-tránh-tốn-phí-aws)
-- [Resume sau khi destroy](#resume-sau-khi-destroy)
-
-## Tổng quan hệ thống
-
-Hệ thống KLTN được triển khai theo luồng:
-
-```text
-Terraform
--> AWS Infrastructure
--> EKS Cluster
--> ArgoCD
--> k8s-manifests
--> Frontend + Microservices
-```
-
-Trong đó:
-
-- `kltn-terraform`: tạo hạ tầng AWS/EKS.
-- `k8s-manifests`: chứa Kubernetes manifests.
-- `KLTN-dev`: chứa source code frontend và microservices.
-- `DockerHub`: chứa Docker image của các service.
-- `ArgoCD`: tự động sync manifests vào EKS.
-
-## Các repository liên quan
-
-| Repository | Vai trò |
-| --- | --- |
-| `kltn-terraform` | Tạo hạ tầng AWS/EKS bằng Terraform |
-| `k8s-manifests` | Chứa Kubernetes Deployment, Service, ConfigMap |
-| `KLTN-dev` | Source code frontend và backend microservices |
-| `Chatbot` | Rasa/Chatbot/MLOps, xử lý ở giai đoạn sau |
-
-## Hạ tầng được tạo bởi Terraform
-
-Repo này dùng Terraform để tạo các thành phần chính:
-
-- VPC
-- Subnets
-- Internet Gateway
-- Route Tables
-- Security Groups
-- EKS Cluster
-- EKS Managed Node Group
-- Worker Node EC2
-
-Thông tin cluster hiện tại:
-
-| Thuộc tính | Giá trị |
-| --- | --- |
-| Cluster name | `kltn-eks-dev` |
-| Region | `ap-southeast-1` |
-| Namespace ứng dụng | `dev` |
-| Namespace ArgoCD | `argocd` |
-
-## Kiến trúc ứng dụng
-
-Hệ thống gồm các service chính:
-
-| Service | Vai trò | Port |
+| File | Bắt buộc | Lý do |
 | --- | --- | --- |
-| `frontend` | Giao diện người dùng | `3000` |
-| `api-gateway` | Cổng giao tiếp chính giữa frontend và backend | `4000` |
-| `users-service` | Quản lý người dùng | `3001` |
-| `auth-service` | Xác thực, đăng nhập, JWT | `3002` |
-| `tours-service` | Quản lý tour du lịch | `3003` |
-| `bookings-service` | Quản lý đặt tour | `3004` |
-| `reviews-service` | Quản lý đánh giá | `3005` |
-| `blog-service` | Quản lý blog/bài viết | `3006` |
-| `chat-service` | Service chat | `3007` |
+| `terraform-eks-cluster/terraform.tfvars` | Có | Chứa giá trị secret và cấu hình riêng như Cloudflare token, Mongo URI, JWT secret |
+| `terraform-eks-cluster/.terraform/` | Không | Tự sinh lại bằng `terraform init` |
+| `terraform-eks-cluster/.terraform.lock.hcl` | Không | Tự sinh lại khi init nếu chưa commit lock file |
+| `terraform-eks-cluster/*.tfstate` | Không nên dùng chung | Terraform state local, không nên push lên Git |
+| `secret-dev.json` | Không dùng cho Terraform hiện tại | File secret local, đang bị ignore |
+| `secret-prod.json` | Không dùng cho Terraform hiện tại | File secret local, đang bị ignore |
 
-## Luồng request
+File quan trọng nhất để chạy được là `terraform-eks-cluster/terraform.tfvars`.
 
-Luồng truy cập hiện tại:
+Tạo file này bằng cách copy file mẫu:
 
-```text
-User Browser
--> Frontend LoadBalancer
--> API Gateway LoadBalancer
--> Internal Microservices
--> MongoDB Atlas / External APIs
+```powershell
+Copy-Item terraform-eks-cluster\terraform.tfvars.example terraform-eks-cluster\terraform.tfvars
 ```
 
-Các service public:
+Sau đó mở `terraform-eks-cluster/terraform.tfvars` và điền giá trị thật.
 
-| Service | Type |
-| --- | --- |
-| `frontend` | `LoadBalancer` |
-| `api-gateway` | `LoadBalancer` |
+## Yêu cầu trước khi chạy
 
-Các service nội bộ:
+Cài các công cụ sau:
 
-- `auth-service`
-- `users-service`
-- `tours-service`
-- `bookings-service`
-- `reviews-service`
-- `blog-service`
-- `chat-service`
+- Terraform `>= 1.5.7`
+- AWS CLI
+- kubectl
+- Helm
+- Tài khoản AWS đã có quyền tạo VPC, EKS, EC2, IAM, Load Balancer
+- Cloudflare API token có quyền `Zone Read` và `DNS Edit`
 
-Các service nội bộ chỉ dùng `ClusterIP`, không expose trực tiếp ra Internet.
+Đăng nhập AWS:
 
-## Cách triển khai hạ tầng
-
-### Bước 1: Cấu hình AWS CLI
-
-```bash
+```powershell
 aws configure
-```
-
-Kiểm tra tài khoản AWS hiện tại:
-
-```bash
 aws sts get-caller-identity
 ```
 
-### Bước 2: Khởi tạo Terraform
+## Cấu trúc repo
 
-```bash
+```text
+.
+├── terraform-eks-cluster/   # Hạ tầng EKS chính
+├── terraform_CI/            # Hạ tầng EC2 CI/Jenkins/SonarQube
+├── get-services.ps1         # Script lấy URL ArgoCD, Grafana, Prometheus
+├── argocd.yml               # Manifest ArgoCD tham khảo
+└── secret-example.yaml      # Ví dụ Kubernetes Secret
+```
+
+## Cấu hình Terraform EKS
+
+Các biến bắt buộc trong `terraform-eks-cluster/terraform.tfvars`:
+
+```hcl
+cloudflare_api_token = "replace-me"
+cloudflare_zone_id   = "replace-me"
+
+jwt_secret       = "replace-me"
+mongo_atlas_uri  = "replace-me"
+together_api_key = "replace-me"
+```
+
+Các biến có default nhưng có thể đổi:
+
+```hcl
+aws_region         = "ap-southeast-1"
+cluster_name       = "kltn-eks-dev"
+kubernetes_version = "1.33"
+
+node_instance_types = ["m7i-flex.large"]
+node_capacity_type  = "ON_DEMAND"
+node_desired_size   = 2
+node_min_size       = 2
+node_max_size       = 3
+
+grafana_admin_password = "Admin@KLTN2024!"
+```
+
+## Triển khai EKS
+
+Chạy trong thư mục `terraform-eks-cluster`:
+
+```powershell
+cd terraform-eks-cluster
 terraform init
-```
-
-### Bước 3: Kiểm tra kế hoạch tạo hạ tầng
-
-```bash
+terraform validate
 terraform plan
-```
-
-### Bước 4: Tạo hạ tầng
-
-```bash
 terraform apply
 ```
 
-Khi Terraform yêu cầu xác nhận, nhập:
+Khi Terraform hỏi xác nhận, nhập:
 
 ```text
 yes
 ```
 
-Sau khi hoàn tất, Terraform sẽ tạo EKS cluster và worker node trên AWS.
+Terraform sẽ tạo:
 
-## Kết nối kubectl với EKS
+- VPC và public subnets
+- EKS cluster
+- EKS managed node group
+- ingress-nginx
+- namespace `dev`, `prod`, `argocd`, `monitoring`
+- Kubernetes secret `kltn-app-secrets` cho `dev` và `prod`
+- ArgoCD và 2 application `kltn-dev`, `kltn-prod`
+- kube-prometheus-stack và Grafana
+- DNS Cloudflare: `dev`, `api-dev`, `prod`, `api-prod`
 
-Sau khi Terraform tạo cluster thành công, chạy:
+## Kết nối kubectl
 
-```bash
-aws eks update-kubeconfig \
-  --region ap-southeast-1 \
-  --name kltn-eks-dev
-```
+Sau khi `terraform apply` xong:
 
-Kiểm tra context:
-
-```bash
-kubectl config current-context
-```
-
-Kiểm tra node:
-
-```bash
+```powershell
+aws eks update-kubeconfig --region ap-southeast-1 --name kltn-eks-dev
 kubectl get nodes -o wide
 ```
 
-Kết quả mong muốn:
+Node cần ở trạng thái `Ready`.
 
-```text
-STATUS = Ready
+## Lấy URL dịch vụ
+
+Có thể chạy script:
+
+```powershell
+.\get-services.ps1
 ```
 
-## Kiểm tra ArgoCD
+Hoặc lấy thủ công:
 
-ArgoCD được dùng để deploy ứng dụng từ repo `k8s-manifests`.
-
-Kiểm tra ArgoCD Application:
-
-```bash
-kubectl -n argocd get applications
-```
-
-Kết quả mong muốn:
-
-```text
-NAME       SYNC STATUS   HEALTH STATUS
-kltn-dev   Synced        Healthy
-```
-
-## Kiểm tra ứng dụng sau khi deploy
-
-Kiểm tra toàn bộ resource trong namespace `dev`:
-
-```bash
-kubectl -n dev get all -o wide
-```
-
-Kiểm tra pod:
-
-```bash
-kubectl -n dev get pods
-```
-
-Kết quả mong muốn:
-
-```text
-READY   1/1
-STATUS  Running
-```
-
-Kiểm tra service:
-
-```bash
+```powershell
+kubectl get svc argocd-server -n argocd
+kubectl get svc kube-prometheus-stack-grafana -n monitoring
 kubectl -n dev get svc
+kubectl -n prod get svc
+```
+
+Lấy mật khẩu ArgoCD mặc định:
+
+```powershell
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}"
+```
+
+Trên PowerShell có thể decode base64:
+
+```powershell
+[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("<password-base64>"))
+```
+
+Grafana mặc định:
+
+```text
+Username: admin
+Password: giá trị grafana_admin_password trong terraform.tfvars
+```
+
+Prometheus không expose public. Dùng port-forward:
+
+```powershell
+kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090
+```
+
+Sau đó mở `http://localhost:9090`.
+
+## Kiểm tra ArgoCD và ứng dụng
+
+```powershell
+kubectl -n argocd get applications
+kubectl -n dev get all
+kubectl -n prod get all
+kubectl -n dev get secret kltn-app-secrets
+kubectl -n prod get secret kltn-app-secrets
 ```
 
 Kết quả mong muốn:
 
-```text
-frontend      LoadBalancer
-api-gateway   LoadBalancer
-```
+- ArgoCD application ở trạng thái `Synced` và `Healthy`
+- Pod trong `dev` và `prod` ở trạng thái `Running`
+- Secret `kltn-app-secrets` tồn tại trong cả 2 namespace
 
-Các service còn lại là `ClusterIP`.
+## Terraform CI
 
-## Kiểm tra API Gateway
-
-Lấy DNS của API Gateway:
-
-```bash
-kubectl -n dev get svc api-gateway
-```
-
-Test API:
-
-```bash
-curl http://<api-gateway-loadbalancer-dns>/tours
-```
-
-Kết quả mong muốn:
-
-```json
-[]
-```
-
-Hoặc danh sách tour nếu database đã có dữ liệu.
-
-## Kiểm tra Frontend
-
-Lấy DNS của frontend:
-
-```bash
-kubectl -n dev get svc frontend
-```
-
-Mở trên trình duyệt:
+Thư mục `terraform_CI` dựng một EC2 phục vụ CI. Trước khi chạy cần đảm bảo AWS account có key pair tên:
 
 ```text
-http://<frontend-loadbalancer-dns>
+jenkin_keypair
 ```
 
-Frontend sẽ gọi API thông qua API Gateway.
+Chạy:
 
-## ConfigMap và Secret
-
-Ứng dụng dùng ConfigMap để khai báo URL nội bộ giữa API Gateway và các service.
-
-ConfigMap chính:
-
-```text
-kltn-app-config
-```
-
-Các giá trị cần có:
-
-```env
-AUTH_SERVICE_URL=http://auth-service
-USERS_SERVICE_URL=http://users-service
-TOURS_SERVICE_URL=http://tours-service
-BOOKINGS_SERVICE_URL=http://bookings-service
-REVIEWS_SERVICE_URL=http://reviews-service
-BLOG_SERVICE_URL=http://blog-service
-CHAT_SERVICE_URL=http://chat-service
-```
-
-Lưu ý:
-
-- Không đặt `PORT` trong ConfigMap dùng chung.
-- Vì mỗi service có port riêng. Nếu đặt `PORT=4000` trong ConfigMap dùng chung, toàn bộ backend có thể bị ép chạy sai port.
-
-Secret chính:
-
-```text
-kltn-app-secrets
-```
-
-Các key cần có:
-
-```env
-JWT_SECRET
-MONGO_ATLAS_URI
-MONGO_URL
-TOGETHER_API_KEY
-```
-
-Không commit secret thật lên GitHub.
-
-## Dừng hệ thống để tránh tốn phí AWS
-
-Không nên stop EC2 thủ công trên AWS Console vì EKS, LoadBalancer, NAT Gateway hoặc Auto Scaling Group vẫn có thể tiếp tục phát sinh chi phí.
-
-### Cách 1: Nghỉ ngắn
-
-Scale node group về `0`:
-
-```bash
-aws eks list-nodegroups \
-  --cluster-name kltn-eks-dev \
-  --region ap-southeast-1
-```
-
-Sau đó:
-
-```bash
-aws eks update-nodegroup-config \
-  --cluster-name kltn-eks-dev \
-  --nodegroup-name <nodegroup-name> \
-  --scaling-config minSize=0,maxSize=1,desiredSize=0 \
-  --region ap-southeast-1
-```
-
-Khi cần bật lại:
-
-```bash
-aws eks update-nodegroup-config \
-  --cluster-name kltn-eks-dev \
-  --nodegroup-name <nodegroup-name> \
-  --scaling-config minSize=1,maxSize=1,desiredSize=1 \
-  --region ap-southeast-1
-```
-
-### Cách 2: Nghỉ dài
-
-Xóa toàn bộ hạ tầng bằng Terraform:
-
-```bash
-terraform destroy
-```
-
-Đây là cách tiết kiệm chi phí nhất khi không sử dụng AWS trong thời gian dài.
-
-## Resume sau khi destroy
-
-Khi cần dựng lại hệ thống:
-
-```bash
+```powershell
+cd terraform_CI
 terraform init
+terraform validate
+terraform plan
 terraform apply
 ```
 
-Kết nối lại EKS:
+Lưu ý: AMI ID trong `terraform_CI/main.tf` đang cố định theo region `ap-southeast-1`. Nếu đổi region cần kiểm tra lại AMI.
 
-```bash
-aws eks update-kubeconfig \
-  --region ap-southeast-1 \
-  --name kltn-eks-dev
+## Dọn hạ tầng để tránh tốn phí
+
+Xóa EKS stack:
+
+```powershell
+cd terraform-eks-cluster
+terraform destroy
 ```
 
-Kiểm tra:
+Xóa CI stack nếu đã tạo:
 
-```bash
-kubectl get nodes
-kubectl -n argocd get applications
-kubectl -n dev get pods
-kubectl -n dev get svc
+```powershell
+cd terraform_CI
+terraform destroy
 ```
+
+Không nên chỉ stop EC2 thủ công trên AWS Console vì EKS, Load Balancer hoặc các tài nguyên liên quan vẫn có thể phát sinh chi phí.
+

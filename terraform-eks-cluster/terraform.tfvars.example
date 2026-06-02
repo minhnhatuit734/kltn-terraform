@@ -1,0 +1,22 @@
+aws_region         = "ap-southeast-1"
+cluster_name       = "kltn-eks-dev"
+kubernetes_version = "1.33"
+
+cloudflare_api_token = "replace-me"
+cloudflare_zone_id   = "replace-me"
+
+jwt_secret       = "replace-me"
+mongo_atlas_uri  = "replace-me"
+together_api_key = "replace-me"
+
+dev_frontend_api_url  = "http://api-dev.uittravel.shop"
+prod_frontend_api_url = "http://api-prod.uittravel.shop"
+
+node_instance_types = ["m7i-flex.large"]
+node_capacity_type  = "ON_DEMAND"
+node_desired_size   = 2
+node_min_size       = 2
+node_max_size       = 3
+
+grafana_admin_password = "replace-me"
+prometheus_retention   = "15d"
