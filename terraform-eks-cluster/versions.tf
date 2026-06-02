@@ -9,17 +9,27 @@ terraform {
 
     helm = {
       source  = "hashicorp/helm"
-      version = ">= 2.13"
-    }
-
-    kubectl = {
-      source  = "gavinbunney/kubectl"
-      version = ">= 1.14"
+      version = "~> 2.17"
     }
 
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = ">= 2.27"
+      version = "~> 2.36"
+    }
+
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = ">= 1.14.0"
+    }
+
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.0"
+    }
+
+    time = {
+      source  = "hashicorp/time"
+      version = ">= 0.9.0"
     }
   }
 }

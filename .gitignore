@@ -1,7 +1,10 @@
 **/.terraform/
 **/.terraform/*
+.terraform/
 *.tfstate
 *.tfstate.*
+.terraform.lock.hcl
+terraform.tfvars
 crash.log
 crash.*.log
 *.tfvars
@@ -12,3 +15,9 @@ override.tf.json
 *_override.tf.json
 tfplan
 *.tfplan
+
+secret-dev.json
+secret-prod.json
+
+secret-dev.json
+secret-prod.json
