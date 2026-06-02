@@ -2,19 +2,6 @@
 
 Repo này dùng Terraform để dựng hạ tầng AWS cho hệ thống KLTN, gồm EKS cluster, ingress-nginx, ArgoCD, monitoring bằng kube-prometheus-stack/Grafana, Kubernetes secrets cho ứng dụng, và DNS Cloudflare.
 
-## Khi pull code về còn thiếu file gì?
-
-Các file sau không được commit vì chứa secret hoặc state local. Người pull repo về cần tự tạo lại:
-
-| File | Bắt buộc | Lý do |
-| --- | --- | --- |
-| `terraform-eks-cluster/terraform.tfvars` | Có | Chứa giá trị secret và cấu hình riêng như Cloudflare token, Mongo URI, JWT secret |
-| `terraform-eks-cluster/.terraform/` | Không | Tự sinh lại bằng `terraform init` |
-| `terraform-eks-cluster/.terraform.lock.hcl` | Không | Tự sinh lại khi init nếu chưa commit lock file |
-| `terraform-eks-cluster/*.tfstate` | Không nên dùng chung | Terraform state local, không nên push lên Git |
-| `secret-dev.json` | Không dùng cho Terraform hiện tại | File secret local, đang bị ignore |
-| `secret-prod.json` | Không dùng cho Terraform hiện tại | File secret local, đang bị ignore |
-
 File quan trọng nhất để chạy được là `terraform-eks-cluster/terraform.tfvars`.
 
 Tạo file này bằng cách copy file mẫu:
