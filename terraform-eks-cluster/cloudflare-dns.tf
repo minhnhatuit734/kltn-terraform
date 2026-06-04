@@ -60,3 +60,23 @@ resource "cloudflare_dns_record" "prod_api" {
   ttl     = 1
   proxied = false
 }
+
+resource "cloudflare_dns_record" "argocd" {
+  zone_id = var.cloudflare_zone_id
+
+  name    = "argocd"
+  type    = "CNAME"
+  content = local.ingress_nginx_lb_hostname
+  ttl     = 1
+  proxied = false
+}
+
+resource "cloudflare_dns_record" "grafana" {
+  zone_id = var.cloudflare_zone_id
+
+  name    = "grafana"
+  type    = "CNAME"
+  content = local.ingress_nginx_lb_hostname
+  ttl     = 1
+  proxied = false
+}

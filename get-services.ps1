@@ -1,38 +1,40 @@
-# Script lay thong tin cac dich vu tu EKS cluster kltn-eks-dev
-
 Write-Host "=== 1. Cap nhat kubeconfig ===" -ForegroundColor Cyan
 aws eks update-kubeconfig --region ap-southeast-1 --name kltn-eks-dev
 
-Write-Host "`n=== 2. Thong tin dich vu ArgoCD ===" -ForegroundColor Cyan
-$argocd_host = kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-if ($argocd_host) {
-    Write-Host "ArgoCD URL: http://$argocd_host" -ForegroundColor Green
+Write-Host "`n=== 2. NGINX Ingress LoadBalancer ===" -ForegroundColor Cyan
+$ingressHost = kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+if ($ingressHost) {
+    Write-Host "NGINX Ingress LB: http://$ingressHost" -ForegroundColor Green
 } else {
-    Write-Host "Dang cho LoadBalancer cap phat Hostname cho ArgoCD..." -ForegroundColor Yellow
-    kubectl get svc argocd-server -n argocd
+    Write-Host "Dang cho LoadBalancer cap phat hostname cho ingress-nginx..." -ForegroundColor Yellow
+    kubectl get svc ingress-nginx-controller -n ingress-nginx
 }
+
+Write-Host "`n=== 3. ArgoCD ===" -ForegroundColor Cyan
+Write-Host "ArgoCD URL: https://argocd.uittravel.shop" -ForegroundColor Green
 
 $null = kubectl get secret argocd-initial-admin-secret -n argocd 2>$null
 if ($LASTEXITCODE -eq 0) {
-    $argocd_secret = kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}"
-    $argocd_pass = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($argocd_secret))
+    $argocdSecret = kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}"
+    $argocdPass = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($argocdSecret))
     Write-Host "Username  : admin"
-    Write-Host "Password  : $argocd_pass"
+    Write-Host "Password  : $argocdPass"
 } else {
     Write-Host "Mat khau khoi tao da duoc thay doi hoac secret khong ton tai." -ForegroundColor Yellow
 }
 
-Write-Host "`n=== 3. Thong tin dich vu Grafana ===" -ForegroundColor Cyan
-$grafana_host = kubectl get svc kube-prometheus-stack-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-if ($grafana_host) {
-    Write-Host "Grafana URL: http://$grafana_host" -ForegroundColor Green
-} else {
-    Write-Host "Dang cho LoadBalancer cap phat Hostname cho Grafana..." -ForegroundColor Yellow
-    kubectl get svc kube-prometheus-stack-grafana -n monitoring
-}
+Write-Host "`n=== 4. Grafana ===" -ForegroundColor Cyan
+Write-Host "Grafana URL: https://grafana.uittravel.shop" -ForegroundColor Green
 Write-Host "Username   : admin"
-Write-Host "Password   : Admin@KLTN2024!"
+Write-Host "Password   : xem terraform.tfvars -> grafana_admin_password"
 
-Write-Host "`n=== 4. Thong tin dich vu Prometheus ===" -ForegroundColor Cyan
-Write-Host "Prometheus khong expose ra ngoai. Chay lenh sau de truy cap tai http://localhost:9090 :" -ForegroundColor Yellow
+Write-Host "`n=== 5. Application URLs ===" -ForegroundColor Cyan
+Write-Host "Dev Frontend : https://dev.uittravel.shop"
+Write-Host "Dev API      : https://api-dev.uittravel.shop"
+Write-Host "Prod Frontend: https://prod.uittravel.shop"
+Write-Host "Prod API     : https://api-prod.uittravel.shop"
+
+Write-Host "`n=== 6. Prometheus ===" -ForegroundColor Cyan
+Write-Host "Prometheus khong expose public. Chay lenh sau de truy cap tai http://localhost:9090 :" -ForegroundColor Yellow
 Write-Host "kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090" -ForegroundColor Magenta

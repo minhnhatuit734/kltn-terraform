@@ -21,3 +21,5 @@ secret-prod.json
 
 secret-dev.json
 secret-prod.json
+
+*.key

@@ -1,21 +1,17 @@
-# ──────────────────────────────────────────────
-# Namespace: argocd
-# ──────────────────────────────────────────────
 resource "kubernetes_namespace_v1" "argocd" {
   metadata {
     name = var.argocd_namespace
+
     labels = {
       "app.kubernetes.io/managed-by" = "Terraform"
     }
   }
 
-  depends_on = [module.eks]
+  depends_on = [
+    time_sleep.wait_for_eks_api
+  ]
 }
 
-# ──────────────────────────────────────────────
-# Helm Release: ArgoCD
-# Chart: https://argoproj.github.io/argo-helm
-# ──────────────────────────────────────────────
 resource "helm_release" "argocd" {
   name             = "argocd"
   repository       = "https://argoproj.github.io/argo-helm"
@@ -23,15 +19,25 @@ resource "helm_release" "argocd" {
   version          = var.argocd_chart_version
   namespace        = var.argocd_namespace
   create_namespace = false
-  timeout          = 600
-  atomic           = true
-  cleanup_on_fail  = true
+
+  wait                       = true
+  wait_for_jobs              = true
+  timeout                    = 900
+  atomic                     = true
+  cleanup_on_fail            = true
+  disable_openapi_validation = true
+
+  set {
+  name  = "crds.keep"
+  value = "false"
+}
+  skip_crds        = false
 
   dynamic "set" {
     for_each = [
       {
         name  = "server.service.type"
-        value = "LoadBalancer"
+        value = "ClusterIP"
       },
       {
         name  = "server.extraArgs[0]"
@@ -62,14 +68,48 @@ resource "helm_release" "argocd" {
   }
 
   depends_on = [
-    time_sleep.wait_for_eks_api
+    kubernetes_namespace_v1.argocd
   ]
 }
 
+resource "kubectl_manifest" "argocd_ingress" {
+  yaml_body = <<-YAML
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: argocd-ingress
+      namespace: ${var.argocd_namespace}
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    spec:
+      ingressClassName: nginx
+      tls:
+        - hosts:
+            - argocd.uittravel.shop
+          secretName: argocd-tls
+      rules:
+        - host: argocd.uittravel.shop
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: argocd-server
+                    port:
+                      number: 80
+  YAML
 
-# ──────────────────────────────────────────────
-# ArgoCD Application: kltn-dev
-# ──────────────────────────────────────────────
+  depends_on = [
+    helm_release.argocd,
+    kubectl_manifest.letsencrypt_prod_cluster_issuer
+  ]
+}
+
 resource "kubectl_manifest" "argocd_app_kltn_dev" {
   yaml_body = <<-YAML
     apiVersion: argoproj.io/v1alpha1

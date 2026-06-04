@@ -28,37 +28,42 @@ output "configure_kubectl" {
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"
 }
 
-output "cluster_certificate_authority_data" {
-  description = "Base64 encoded certificate data required to communicate with the cluster"
-  value       = module.eks.cluster_certificate_authority_data
+output "ingress_nginx_load_balancer" {
+  description = "NGINX Ingress LoadBalancer hostname"
+  value       = local.ingress_nginx_lb_hostname
 }
 
-output "cluster_oidc_issuer_url" {
-  description = "The URL on the EKS cluster for the OpenID Connect identity provider"
-  value       = module.eks.cluster_oidc_issuer_url
+output "app_urls" {
+  description = "Application URLs"
+  value = {
+    dev_frontend  = "https://dev.uittravel.shop"
+    dev_api       = "https://api-dev.uittravel.shop"
+    prod_frontend = "https://prod.uittravel.shop"
+    prod_api      = "https://api-prod.uittravel.shop"
+  }
 }
 
-output "argocd_server_service" {
-  description = "ArgoCD Server LoadBalancer - chay lenh nay de lay URL"
-  value       = "kubectl get svc argocd-server -n ${var.argocd_namespace} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'"
+output "argocd_url" {
+  description = "ArgoCD URL through NGINX Ingress"
+  value       = "https://argocd.uittravel.shop"
 }
 
 output "argocd_initial_admin_password_cmd" {
-  description = "Lenh lay mat khau admin mac dinh cua ArgoCD"
+  description = "Command to get initial ArgoCD admin password"
   value       = "kubectl -n ${var.argocd_namespace} get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
 }
 
-output "grafana_service" {
-  description = "Grafana LoadBalancer - chay lenh nay de lay URL"
-  value       = "kubectl get svc kube-prometheus-stack-grafana -n ${var.monitoring_namespace} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'"
+output "grafana_url" {
+  description = "Grafana URL through NGINX Ingress"
+  value       = "https://grafana.uittravel.shop"
 }
 
 output "grafana_admin_credentials" {
   description = "Grafana admin credentials"
-  value       = "Username: admin | Password: xem variables.tf hoac tfvars -> grafana_admin_password"
+  value       = "Username: admin | Password: see terraform.tfvars -> grafana_admin_password"
 }
 
 output "prometheus_service" {
-  description = "Prometheus khong expose ra ngoai. Truy cap qua kubectl port-forward"
+  description = "Prometheus is not exposed publicly. Access with kubectl port-forward."
   value       = "kubectl port-forward svc/kube-prometheus-stack-prometheus -n ${var.monitoring_namespace} 9090:9090"
 }

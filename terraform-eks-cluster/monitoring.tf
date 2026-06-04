@@ -1,9 +1,7 @@
-# ──────────────────────────────────────────────
-# Namespace: monitoring
-# ──────────────────────────────────────────────
 resource "kubernetes_namespace_v1" "monitoring" {
   metadata {
     name = var.monitoring_namespace
+
     labels = {
       "app.kubernetes.io/managed-by" = "Terraform"
     }
@@ -14,9 +12,6 @@ resource "kubernetes_namespace_v1" "monitoring" {
   ]
 }
 
-# ──────────────────────────────────────────────
-# Helm Release: kube-prometheus-stack
-# ──────────────────────────────────────────────
 resource "helm_release" "kube_prometheus_stack" {
   name             = "kube-prometheus-stack"
   repository       = "https://prometheus-community.github.io/helm-charts"
@@ -34,7 +29,6 @@ resource "helm_release" "kube_prometheus_stack" {
 
   dynamic "set" {
     for_each = [
-      # Grafana
       {
         name  = "grafana.enabled"
         value = "true"
@@ -45,7 +39,7 @@ resource "helm_release" "kube_prometheus_stack" {
       },
       {
         name  = "grafana.service.type"
-        value = "LoadBalancer"
+        value = "ClusterIP"
       },
       {
         name  = "grafana.persistence.enabled"
@@ -59,8 +53,6 @@ resource "helm_release" "kube_prometheus_stack" {
         name  = "grafana.defaultDashboardsTimezone"
         value = "Asia/Ho_Chi_Minh"
       },
-
-      # Prometheus
       {
         name  = "prometheus.enabled"
         value = "true"
@@ -89,8 +81,6 @@ resource "helm_release" "kube_prometheus_stack" {
         name  = "prometheus.prometheusSpec.resources.limits.memory"
         value = "2Gi"
       },
-
-      # Alertmanager
       {
         name  = "alertmanager.enabled"
         value = "true"
@@ -103,14 +93,10 @@ resource "helm_release" "kube_prometheus_stack" {
         name  = "alertmanager.alertmanagerSpec.storage"
         value = ""
       },
-
-      # Node Exporter
       {
         name  = "nodeExporter.enabled"
         value = "true"
       },
-
-      # Kube State Metrics
       {
         name  = "kubeStateMetrics.enabled"
         value = "true"
@@ -126,5 +112,43 @@ resource "helm_release" "kube_prometheus_stack" {
   depends_on = [
     kubernetes_namespace_v1.monitoring,
     time_sleep.wait_for_eks_api
+  ]
+}
+
+resource "kubectl_manifest" "grafana_ingress" {
+  yaml_body = <<-YAML
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: grafana-ingress
+      namespace: ${var.monitoring_namespace}
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    spec:
+      ingressClassName: nginx
+      tls:
+        - hosts:
+            - grafana.uittravel.shop
+          secretName: grafana-tls
+      rules:
+        - host: grafana.uittravel.shop
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: kube-prometheus-stack-grafana
+                    port:
+                      number: 80
+  YAML
+
+  depends_on = [
+    helm_release.kube_prometheus_stack,
+    kubectl_manifest.letsencrypt_prod_cluster_issuer
   ]
 }
