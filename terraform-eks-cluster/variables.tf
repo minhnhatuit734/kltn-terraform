@@ -194,3 +194,37 @@ variable "letsencrypt_email" {
   description = "Email used for Let's Encrypt ACME registration"
   type        = string
 }
+
+variable "dev_namespace" { type = string }
+variable "prod_namespace" { type = string }
+variable "chatbot_db_user" { type = string }
+variable "chatbot_db_password" {
+  type      = string
+  sensitive = true
+}
+variable "chatbot_gemini_api_key" {
+  type      = string
+  sensitive = true
+}
+variable "chatbot_qdrant_api_key" {
+  type      = string
+  sensitive = true
+}
+variable "chatbot_aws_access_key_id" {
+  type      = string
+  sensitive = true
+}
+variable "chatbot_aws_secret_access_key" {
+  type      = string
+  sensitive = true
+}
+variable "chatbot_aws_default_region" { type = string }
+variable "chatbot_s3_bucket_name" { type = string }
+variable "chatbot_s3_model_key" { type = string }
+variable "dockerhub_username" { type = string }
+variable "dockerhub_password" {
+  type      = string
+  sensitive = true
+}
+variable "dockerhub_email" { type = string }
+

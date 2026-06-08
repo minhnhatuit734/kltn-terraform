@@ -18,7 +18,7 @@ data "kubernetes_service_v1" "ingress_nginx_controller" {
 }
 
 locals {
-  ingress_nginx_lb_hostname = data.kubernetes_service_v1.ingress_nginx_controller.status[0].load_balancer[0].ingress[0].hostname
+  ingress_nginx_lb_hostname = try(data.kubernetes_service_v1.ingress_nginx_controller.status[0].load_balancer[0].ingress[0].hostname, "pending.destroy")
 }
 
 resource "cloudflare_dns_record" "dev_frontend" {

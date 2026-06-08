@@ -1,0 +1,7 @@
+aws_region           = "ap-southeast-1"
+aws_access_key       = "THAY_BANG_AWS_ACCESS_KEY"
+aws_secret_key       = "THAY_BANG_AWS_SECRET_KEY"
+cloudflare_api_token = "THAY_BANG_CLOUDFLARE_API_TOKEN"
+cloudflare_zone_id   = "THAY_BANG_CLOUDFLARE_ZONE_ID"
+instance_type        = "m7i.large"
+key_name             = "chatbot-key"

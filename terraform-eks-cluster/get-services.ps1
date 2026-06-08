@@ -38,3 +38,15 @@ Write-Host "Prod API     : https://api-prod.uittravel.shop"
 Write-Host "`n=== 6. Prometheus ===" -ForegroundColor Cyan
 Write-Host "Prometheus khong expose public. Chay lenh sau de truy cap tai http://localhost:9090 :" -ForegroundColor Yellow
 Write-Host "kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090" -ForegroundColor Magenta
+
+Write-Host "`n=== 7. Chatbot MLOps Services (EC2) ===" -ForegroundColor Cyan
+Write-Host "MLflow UI      : http://46.137.246.147:5000"
+Write-Host "MinIO S3 UI    : http://46.137.246.147:9001"
+Write-Host "MinIO API      : http://46.137.246.147:9000"
+Write-Host "S3 Username    : admin"
+Write-Host "S3 Password    : password123"
+Write-Host "Chatbot Domain : https://chatbot.uittravel.shop"
+Write-Host "MLflow Domain  : https://mlflow.uittravel.shop"
+
+Write-Host "`n=== 8. Jenkins CI/CD ===" -ForegroundColor Cyan
+Write-Host "Jenkins URL    : http://54.254.94.172:8080"
