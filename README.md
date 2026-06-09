@@ -22,13 +22,14 @@
 
 ## 📌 Tổng quan dự án
 
-Dự án xây dựng pipeline **DevSecOps end-to-end** cho ứng dụng web đặt tour du lịch (`uittravel.shop`) với kiến trúc microservices. Toàn bộ hạ tầng được quản lý bằng **Terraform** và chia thành 3 module chính:
+Dự án xây dựng pipeline **DevSecOps end-to-end** cho ứng dụng web đặt tour du lịch (`uittravel.shop`) với kiến trúc microservices. Toàn bộ hạ tầng được quản lý bằng **Terraform** và chia thành 4 module chính:
 
 | Module | Mục đích |
 |---|---|
 | `terraform_CI` | Provision EC2 chứa Jenkins + SonarQube (CI server) |
 | `argocd/` | Provision EC2 + K3s + ArgoCD standalone (ArgoCD server) |
 | `terraform-eks-cluster/` | Provision AWS EKS cluster + toàn bộ add-ons |
+| `terraform-ec2-chatbot/` | Provision EC2 chạy Chatbot AI (Rasa, MLflow, MinIO) |
 
 ---
 
@@ -53,6 +54,8 @@ Kiến trúc tổng thể khi triển khai trên AWS với ArgoCD làm CD contro
 │  api-prod.uittravel.shop     │     │  └────────┬────────┘  └──────┬──────┘  │
 │  argocd.uittravel.shop       │     │           │ push             │ watch   │
 │  grafana.uittravel.shop      │     └───────────┼──────────────────┼─────────┘
+│  chatbot.uittravel.shop      │                 │                  │
+│  mlflow.uittravel.shop       │                 │                  │
 └──────────────────┬───────────┘                 │                  │
                    │                             ▼                  │
                    │                ┌────────────────────────┐      │
@@ -248,6 +251,12 @@ kltn-terraform/
 │       ├── iam/
 │       └── vpc/
 │
+├── terraform-ec2-chatbot/           # EC2 cho Chatbot AI (Rasa, MLflow, MinIO)
+│   ├── main.tf                      # AWS EC2, Security Group, EIP, User data
+│   ├── cloudflare-dns.tf            # Cloudflare DNS records
+│   ├── variables.tf                 # Khai báo biến
+│   └── outputs.tf                   # Output URLs
+│
 ├── argocd.yml                       # ArgoCD Application manifest (standalone deploy)
 ├── letsencrypt-account.key          # ACME account key (Let's Encrypt)
 ├── secret-example.yaml              # Ví dụ cấu trúc Secret
@@ -306,6 +315,15 @@ kltn-terraform/
 - `kube-proxy`
 - `vpc-cni` (before compute)
 - `eks-pod-identity-agent` (before compute)
+
+### 4. Chatbot Server (`terraform-ec2-chatbot/`)
+
+| Thành phần | Chi tiết |
+|---|---|
+| **Instance** | EC2 Ubuntu 24.04 |
+| **Software** | Docker, Rasa, MLflow, MinIO |
+| **Mục đích** | Triển khai AI Chatbot, theo dõi mô hình với MLflow và object storage với MinIO |
+| **Networking** | Elastic IP cố định, Cloudflare DNS (`chatbot`, `mlflow`) |
 
 ---
 
@@ -439,7 +457,22 @@ terraform apply plan.out
 
 ---
 
-### Bước 4: Cấu hình kubectl
+### Bước 4: Tạo Chatbot Server (Tuỳ chọn)
+
+```bash
+cd terraform-ec2-chatbot
+
+cp terraform.tfvars.example terraform.tfvars
+# Chỉnh sửa biến trong terraform.tfvars nếu cần
+
+terraform init
+terraform plan
+terraform apply
+```
+
+---
+
+### Bước 5: Cấu hình kubectl
 
 ```bash
 aws eks update-kubeconfig \
@@ -449,7 +482,7 @@ aws eks update-kubeconfig \
 
 ---
 
-### Bước 5: Lấy mật khẩu ArgoCD
+### Bước 6: Lấy mật khẩu ArgoCD
 
 ```bash
 kubectl -n argocd get secret argocd-initial-admin-secret \
@@ -495,6 +528,8 @@ Sau khi triển khai thành công:
 | **API Gateway (Prod)** | `https://api-prod.uittravel.shop` |
 | **ArgoCD UI** | `https://argocd.uittravel.shop` |
 | **Grafana** | `https://grafana.uittravel.shop` |
+| **Chatbot API** | `https://chatbot.uittravel.shop` |
+| **MLflow** | `https://mlflow.uittravel.shop` |
 | **Jenkins** | `http://<CI_EC2_IP>:8080` |
 | **SonarQube** | `http://<CI_EC2_IP>:9000` |
 | **Prometheus** | `kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090` |
@@ -528,6 +563,10 @@ Truy cập Grafana:
 # Xóa EKS cluster (chạy script destroy để dọn dẹp NLB trước)
 cd terraform-eks-cluster
 powershell -File destroy.ps1
+
+# Xóa Chatbot
+cd ../terraform-ec2-chatbot
+terraform destroy
 
 # Xóa CI server
 cd ../terraform_CI
